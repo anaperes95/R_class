@@ -1,0 +1,175 @@
+---
+title: "Deseq2"
+author: "ana"
+format: html
+editor: visual
+---
+
+## DESEQ2 CLASS
+
+```{r}
+if (!requireNamespace("BiocManager", quietly = TRUE))
+    install.packages("BiocManager")
+
+BiocManager::install("pasilla")
+BiocManager::install("DESeq2")
+BiocManager::install("apeglm")
+BiocManager::install("pheatmap")
+install.packages("tidyverse")
+```
+
+```{r}
+library(DESeq2)
+library(tidyverse)
+```
+
+```{r}
+pasCts <- system.file("extdata",
+                      "pasilla_gene_counts.tsv",
+                      package="pasilla", mustWork=TRUE)
+pasAnno <- system.file("extdata",
+                       "pasilla_sample_annotation.csv",
+                       package="pasilla", mustWork=TRUE)
+cts <- as.matrix(read.csv(pasCts,sep="\t",row.names="gene_id"))
+coldata <- read.csv(pasAnno, row.names=1)
+coldata <- coldata[,c("condition","type")]
+coldata$condition <- factor(coldata$condition)
+coldata$type <- factor(coldata$type)
+```
+
+```{r}
+
+```
+
+```{r}
+glimpse(coldata)
+```
+
+```{r}
+typeof(coldata$condition)
+typeof(coldata$type)
+
+attributes(coldata$condition)
+attributes(coldata$type)
+```
+
+Data inspection
+
+```{r}
+dim(cts)
+
+cts[1:10,]
+```
+
+```{r}
+coldata
+```
+
+```{r}
+# DON'T USE LIKE THIS: DATA IN THE ROWS IS NOT COMPATIBLE
+rbind(
+  colnames(cts),
+  rownames(coldata)
+)
+```
+
+```{r}
+# CHANGE NAMES OF ROWS
+rownames(coldata) <- sub("fb", "", rownames(coldata))
+# order the data based on the columns
+coldata <- coldata[colnames(cts),]
+# check again visually
+rbind(
+  colnames(cts),
+  rownames(coldata)
+)
+```
+
+```{r}
+# Can you write up a way to check that the two name vectors are in order, without visually checking?
+
+all(colnames(cts) == rownames(coldata))
+```
+
+dds
+
+```{r}
+coldata$condition <- factor(
+  coldata$condition,
+  levels = c("untreated", "treated")) 
+dds <- DESeqDataSetFromMatrix(
+  countData = cts,
+  colData = coldata,
+  design = ~ condition 
+)
+
+# not necessary, just to put something here
+rowData(dds)$gene <- rownames(dds)
+
+dds
+```
+
+```{r}
+dds_out <- DESeq(dds)
+dds_out
+resultsNames(dds_out)
+res <- results(dds_out, name =)
+res
+```
+
+```{r}
+res_shrink <- lfcShrink(
+  dds_out,
+  coef="condition_treated_vs_untreated",
+  type="apeglm")
+
+res_shrink
+```
+
+```{r}
+plot(res$log2FoldChange, res_shrink$log2FoldChange)
+```
+
+```{r}
+library(ggplot2)
+ggplot(res, aes(x = log2FoldChange)) +
+  geom_point()
+```
+
+Plotting
+
+```{r}
+# alpha is set to 0.1 by default
+plotMA(res, ylim = c(-2, 2))
+```
+
+```{r}
+plotMA(res, ylim = c(-2, 2), alpha = .01)
+```
+
+```{r}
+plotMA(res_shrink, ylim = c(-2, 2), alpha = .0001)
+```
+
+Saving output
+
+```{r}
+res_subset <- res_shrink %>%
+  as_tibble(rownames = "gene") %>%
+  filter(padj < 0.0001 & !is.na(padj))
+
+write.csv(res_subset, "deseq2-sig-results.csv")
+```
+
+Heatmap
+
+```{r}
+# vst = variance stabalizing transform
+library(pheatmap)
+dds_out_vst <- vst(dds_out)
+dds_out_vst_sub <- dds_out_vst[rownames(dds) %in% res_subset$gene,]
+pheatmap(assay(dds_out_vst_sub), cluster_rows = TRUE,
+         show_rownames = FALSE,
+         annotation_col = as.data.frame(colData(dds_out_vst_sub)[,c("condition","type")])
+         )
+```
